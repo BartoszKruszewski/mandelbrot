@@ -10,7 +10,6 @@
 <body>
   <canvas id="fractalCanvas"></canvas>
 
-  <!-- Liquid Glass Toolbar -->
   <div id="toolbar">
     <div class="toolbar-section">
       <span class="toolbar-label">Zoom</span>
@@ -38,14 +37,11 @@
     <div class="toolbar-section palette-section">
       <button id="paletteBtn" class="revolver-btn" title="Switch color profile">
         <svg class="revolver-cylinder" viewBox="0 0 48 48" width="38" height="38">
-          <!-- outer ring with bevel -->
           <circle cx="24" cy="24" r="22" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2"/>
           <circle cx="24" cy="24" r="20.5" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="0.5"/>
-          <!-- 3 chambers (120° apart) -->
           <circle class="chamber" cx="24" cy="8"  r="6"/>
           <circle class="chamber" cx="37.9" cy="32" r="6"/>
           <circle class="chamber" cx="10.1" cy="32" r="6"/>
-          <!-- center hub -->
           <circle cx="24" cy="24" r="4.5" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.35)" stroke-width="1.2"/>
           <circle cx="24" cy="24" r="1.8" fill="rgba(255,255,255,0.25)"/>
         </svg>

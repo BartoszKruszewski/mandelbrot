@@ -1,31 +1,15 @@
-/* =============================================================
-   Mandelbrot Explorer – High-Performance WebGL2 Engine
-   =============================================================
-   • WebGL2 fragment-shader Mandelbrot (emulated double precision)
-   • Adaptive resolution: low-res while interacting → hi-res on idle
-   • Arbitrary-precision coordinate tracking via Decimal.js
-   • Cardioid / bulb-2 early bail-out
-   • GPU tiled progressive hi-res render (scissor-based, visible)
-   • Smooth cosine-based cyclic colour palette
-   • Iteration count scales with zoom depth
-   ============================================================= */
-
 "use strict";
 
-/* ----------------------------------------------------------
-   0.  CONSTANTS & CONFIG
-   ---------------------------------------------------------- */
+Decimal.set({ precision: 120 });
+
 const LOW_RES_DIVISOR  = 4;
 const IDLE_DEBOUNCE_MS = 300;
-const HI_RES_TILE_SIZE = 128;       // px per tile edge
+const HI_RES_TILE_SIZE = 128;
 const BASE_ITER_LOW    = 200;
 const BASE_ITER_HIGH   = 800;
 const ZOOM_SPEED       = 1.1;
-const TILES_PER_FRAME  = 4;         // GPU tiles per rAF yield
+const TILES_PER_FRAME  = 4;
 
-/* ----------------------------------------------------------
-   1.  DOM REFS
-   ---------------------------------------------------------- */
 const canvas      = document.getElementById("fractalCanvas");
 const zoomDisp    = document.getElementById("zoomDisplay");
 const realDisp    = document.getElementById("realDisplay");
@@ -33,15 +17,12 @@ const imagDisp    = document.getElementById("imagDisplay");
 const progressBar = document.getElementById("progressBar");
 const progressTxt = document.getElementById("progressText");
 
-/* ----------------------------------------------------------
-   2.  STATE
-   ---------------------------------------------------------- */
 let idleTimer    = null;
 let hiResAbortId = 0;
 
 const state = {
-  centerRe:    new Decimal("-0.5"),
-  centerIm:    new Decimal("0.0"),
+  centerRe:    "-0.5",
+  centerIm:    "0.0",
   zoom:        new Decimal("1"),
   pixelScale:  3,
   dragging:    false,
@@ -51,31 +32,37 @@ const state = {
   hiResDone:   false,
 };
 
-function floatCenter() {
-  return { re: state.centerRe.toNumber(), im: state.centerIm.toNumber() };
+const ENGINE = {
+  GPU_PERT: "gpu-pert",
+};
+const engineMode = ENGINE.GPU_PERT;
+
+const CENTER_STORE_PREC = 80;
+function storeCenter(d) {
+  return d.toSignificantDigits(CENTER_STORE_PREC).toString();
 }
 
-/** Scale as Decimal (never loses precision) */
+function floatCenter() {
+  return {
+    re: new Decimal(state.centerRe).toNumber(),
+    im: new Decimal(state.centerIm).toNumber(),
+  };
+}
+
 function decimalScale() {
   return new Decimal(state.pixelScale).div(state.zoom);
 }
 
-/** Scale as JS float — only for shader uniforms (may underflow to 0 at extreme zoom) */
 function floatScale() {
   return decimalScale().toNumber();
 }
 
-/** Adaptive iteration count — grows with log of zoom (Decimal-safe) */
 function iterCount(base) {
-  /* Decimal.log2 works for arbitrarily large zoom values */
   const log2z = state.zoom.ln().div(Math.LN2).toNumber();
   const extra = Math.max(0, log2z) * 60;
   return Math.min(Math.round(base + extra), 4000);
 }
 
-/* ----------------------------------------------------------
-   3.  CANVAS SIZE
-   ---------------------------------------------------------- */
 let W, H, dpr;
 
 function resize() {
@@ -87,25 +74,20 @@ function resize() {
   canvas.style.width  = W + "px";
   canvas.style.height = H + "px";
   onInteractionStart();
-  renderLowRes();
-  updateUI();
+  requestRender();
   onInteractionEnd();
 }
 window.addEventListener("resize", resize);
 
-/* ----------------------------------------------------------
-   4.  WEBGL2 SETUP
-   ---------------------------------------------------------- */
 const gl = canvas.getContext("webgl2", {
   antialias: false,
   depth: false,
   stencil: false,
   premultipliedAlpha: false,
-  preserveDrawingBuffer: true,       // keep pixels between frames
+  preserveDrawingBuffer: true,
 });
 if (!gl) { alert("WebGL 2 required."); throw new Error("No WebGL2"); }
 
-/* ---- Shaders ---- */
 const VERT_SRC = `#version 300 es
 precision highp float;
 out vec2 vUV;
@@ -146,7 +128,6 @@ vec2 ds_mul(vec2 a, vec2 b) {
 
 vec3 palette(float t) {
   if (u_paletteMode == 0) {
-    /* Cosmos – very dark background with violet highlights */
     vec3 a = vec3(0.002, 0.001, 0.015);
     vec3 b = vec3(0.16, 0.02, 0.55);
     vec3 c = vec3(1.0, 1.0, 1.0);
@@ -160,24 +141,17 @@ vec3 palette(float t) {
     float ridge = pow(clamp(t, 0.0, 1.0), 0.35) * 0.25;
     return clamp(col + vec3(0.0, 0.0, glow + ridge), 0.0, 1.0);
   } else if (u_paletteMode == 1) {
-    /* Noir – B&W with strong 3D emboss/relief effect */
     float base = 0.5 + 0.5 * cos(6.28318 * t * 0.8);
-    /* multi-frequency edges for depth */
     float edge1 = 0.5 + 0.5 * cos(6.28318 * t * 3.0 + 0.8);
     float edge2 = 0.5 + 0.5 * cos(6.28318 * t * 7.0 + 2.0);
     float edge3 = 0.5 + 0.5 * sin(6.28318 * t * 5.0);
-    /* specular highlight */
     float spec = pow(edge1, 5.0) * 0.6;
-    /* ambient occlusion shadow */
     float ao = (1.0 - edge2) * 0.25;
-    /* rim light */
     float rim = pow(edge3, 4.0) * 0.3;
     float lum = clamp(base * 0.7 + spec + rim - ao + 0.1, 0.0, 1.0);
-    /* slight warm/cool tint for depth perception */
     float warm = spec * 0.08;
     return clamp(vec3(lum + warm, lum, lum - warm * 0.5), 0.0, 1.0);
   } else {
-    /* Inferno – inverted Noir (white base) with red accents */
     float base = 0.5 + 0.5 * cos(6.28318 * t * 0.8);
     float edge1 = 0.5 + 0.5 * cos(6.28318 * t * 3.0 + 0.8);
     float edge2 = 0.5 + 0.5 * cos(6.28318 * t * 7.0 + 2.0);
@@ -234,6 +208,130 @@ void main() {
   }
 }`;
 
+const FRAG_PERT_SRC = `#version 300 es
+precision highp float;
+in vec2 vUV;
+out vec4 fragColor;
+
+uniform vec2  u_resolution;
+uniform float u_scaleHi;
+uniform float u_scaleLo;
+uniform int   u_maxIter;
+uniform int   u_paletteMode;
+uniform sampler2D u_orbitTex;
+uniform int   u_orbitLen;
+
+vec3 palette(float t) {
+  if (u_paletteMode == 0) {
+    vec3 a = vec3(0.002, 0.001, 0.015);
+    vec3 b = vec3(0.16, 0.02, 0.55);
+    vec3 c = vec3(1.0, 1.0, 1.0);
+    vec3 d = vec3(0.05, 0.22, 0.42);
+    vec3 col = a + b * cos(6.28318 * (c * t + d));
+    col.r *= 0.12;
+    col.g *= 0.03;
+    col.g = min(col.g, col.b * 0.06);
+    col = pow(col, vec3(1.35));
+    float glow = pow(max(col.b, 0.0), 3.4) * 0.85;
+    float ridge = pow(clamp(t, 0.0, 1.0), 0.35) * 0.25;
+    return clamp(col + vec3(0.0, 0.0, glow + ridge), 0.0, 1.0);
+  } else if (u_paletteMode == 1) {
+    float base = 0.5 + 0.5 * cos(6.28318 * t * 0.8);
+    float edge1 = 0.5 + 0.5 * cos(6.28318 * t * 3.0 + 0.8);
+    float edge2 = 0.5 + 0.5 * cos(6.28318 * t * 7.0 + 2.0);
+    float edge3 = 0.5 + 0.5 * sin(6.28318 * t * 5.0);
+    float spec = pow(edge1, 5.0) * 0.6;
+    float ao = (1.0 - edge2) * 0.25;
+    float rim = pow(edge3, 4.0) * 0.3;
+    float lum = clamp(base * 0.7 + spec + rim - ao + 0.1, 0.0, 1.0);
+    float warm = spec * 0.08;
+    return clamp(vec3(lum + warm, lum, lum - warm * 0.5), 0.0, 1.0);
+  } else {
+    float base = 0.5 + 0.5 * cos(6.28318 * t * 0.8);
+    float edge1 = 0.5 + 0.5 * cos(6.28318 * t * 3.0 + 0.8);
+    float edge2 = 0.5 + 0.5 * cos(6.28318 * t * 7.0 + 2.0);
+    float edge3 = 0.5 + 0.5 * sin(6.28318 * t * 5.0);
+    float spec = pow(edge1, 5.0) * 0.55;
+    float ao = (1.0 - edge2) * 0.22;
+    float rim = pow(edge3, 4.0) * 0.25;
+    float lum = clamp(base * 0.7 + spec + rim - ao + 0.1, 0.0, 1.0);
+    float inv = clamp(1.0 - lum * 0.85, 0.0, 1.0);
+    float red = pow(edge1, 3.0) * 0.35 + pow(edge3, 4.0) * 0.15;
+    return clamp(vec3(inv + red, inv * 0.95, inv * 0.95), 0.0, 1.0);
+  }
+}
+
+vec2 ds_add(vec2 a, vec2 b) {
+  float t1 = a.x + b.x;
+  float e  = t1 - a.x;
+  float t2 = ((b.x - e) + (a.x - (t1 - e))) + a.y + b.y;
+  float s  = t1 + t2;
+  return vec2(s, t2 - (s - t1));
+}
+vec2 ds_mul(vec2 a, vec2 b) {
+  float t1 = a.x * b.x;
+  float t2 = (a.x * b.x - t1) + a.x * b.y + a.y * b.x;
+  float s  = t1 + t2;
+  return vec2(s, t2 - (s - t1));
+}
+vec2 c_mul(vec2 a, vec2 b) {
+  return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+}
+
+void main() {
+  float aspect = u_resolution.x / u_resolution.y;
+  float px = (vUV.x - 0.5) * aspect;
+  float py = -(vUV.y - 0.5);
+  vec2 scale = vec2(u_scaleHi, u_scaleLo);
+  vec2 delta_c_re = ds_mul(scale, vec2(px, 0.0));
+  vec2 delta_c_im = ds_mul(scale, vec2(py, 0.0));
+
+  vec2 delta_re = vec2(0.0);
+  vec2 delta_im = vec2(0.0);
+  int iter = 0;
+  float zrsq = 0.0, zisq = 0.0;
+  for (int i = 0; i < 4000; i++) {
+    if (i >= u_maxIter || i >= u_orbitLen) break;
+    vec4 z = texelFetch(u_orbitTex, ivec2(i, 0), 0);
+    vec2 z_re = vec2(z.r, z.g);
+    vec2 z_im = vec2(z.b, z.a);
+    vec2 zsum_re = ds_add(z_re, delta_re);
+    vec2 zsum_im = ds_add(z_im, delta_im);
+    vec2 zsum_re2 = ds_mul(zsum_re, zsum_re);
+    vec2 zsum_im2 = ds_mul(zsum_im, zsum_im);
+    zrsq = zsum_re2.x;
+    zisq = zsum_im2.x;
+    if (zrsq + zisq > 4.0) break;
+
+    vec2 zr_dr = ds_mul(z_re, delta_re);
+    vec2 zi_di = ds_mul(z_im, delta_im);
+    vec2 zr_di = ds_mul(z_re, delta_im);
+    vec2 zi_dr = ds_mul(z_im, delta_re);
+    vec2 mul_re = ds_add(zr_dr, vec2(-zi_di.x, -zi_di.y));
+    vec2 mul_im = ds_add(zr_di, zi_dr);
+    vec2 twoZdelta_re = ds_add(mul_re, mul_re);
+    vec2 twoZdelta_im = ds_add(mul_im, mul_im);
+
+    vec2 dr2 = ds_mul(delta_re, delta_re);
+    vec2 di2 = ds_mul(delta_im, delta_im);
+    vec2 deltaSq_re = ds_add(dr2, vec2(-di2.x, -di2.y));
+    vec2 deltaSq_im = ds_add(ds_mul(delta_re, delta_im), ds_mul(delta_re, delta_im));
+
+    delta_re = ds_add(ds_add(twoZdelta_re, deltaSq_re), delta_c_re);
+    delta_im = ds_add(ds_add(twoZdelta_im, deltaSq_im), delta_c_im);
+    iter++;
+  }
+
+  if (iter >= u_maxIter) {
+    fragColor = (u_paletteMode == 2) ? vec4(1,1,1,1) : vec4(0,0,0,1);
+  } else {
+    float mag2 = zrsq + zisq;
+    float nu   = log(log(max(mag2, 1.0))) / log(2.0);
+    float t    = (float(iter) + 1.0 - nu) / 80.0;
+    fragColor  = vec4(palette(t), 1.0);
+  }
+}`;
+
 function compileShader(type, src) {
   const s = gl.createShader(type);
   gl.shaderSource(s, src);
@@ -246,6 +344,7 @@ function compileShader(type, src) {
   return s;
 }
 function linkProgram(vs, fs) {
+  if (!vs || !fs) return null;
   const p = gl.createProgram();
   gl.attachShader(p, vs);
   gl.attachShader(p, fs);
@@ -260,6 +359,8 @@ function linkProgram(vs, fs) {
 const vShader = compileShader(gl.VERTEX_SHADER,  VERT_SRC);
 const fShader = compileShader(gl.FRAGMENT_SHADER, FRAG_SRC);
 const prog    = linkProgram(vShader, fShader);
+const fPertShader = compileShader(gl.FRAGMENT_SHADER, FRAG_PERT_SRC);
+const progPert    = linkProgram(vShader, fPertShader);
 gl.useProgram(prog);
 
 const u_resolution  = gl.getUniformLocation(prog, "u_resolution");
@@ -271,9 +372,14 @@ const u_scale       = gl.getUniformLocation(prog, "u_scale");
 const u_maxIter     = gl.getUniformLocation(prog, "u_maxIter");
 const u_paletteMode = gl.getUniformLocation(prog, "u_paletteMode");
 
-/* ----------------------------------------------------------
-   PALETTE PROFILES & REVOLVER SWITCHER
-   ---------------------------------------------------------- */
+const u_p_resolution  = gl.getUniformLocation(progPert, "u_resolution");
+const u_p_scaleHi     = gl.getUniformLocation(progPert, "u_scaleHi");
+const u_p_scaleLo     = gl.getUniformLocation(progPert, "u_scaleLo");
+const u_p_maxIter     = gl.getUniformLocation(progPert, "u_maxIter");
+const u_p_paletteMode = gl.getUniformLocation(progPert, "u_paletteMode");
+const u_p_orbitTex    = gl.getUniformLocation(progPert, "u_orbitTex");
+const u_p_orbitLen    = gl.getUniformLocation(progPert, "u_orbitLen");
+
 const PALETTES = [
   { id: 0, name: "Cosmos",  theme: "theme-cosmos"  },
   { id: 1, name: "Noir",    theme: "theme-noir"    },
@@ -288,23 +394,18 @@ function applyPalette(index, animate = true) {
   const nameEl  = document.getElementById("paletteName");
   const cylinder = document.querySelector(".revolver-cylinder");
 
-  /* Update toolbar theme class */
   toolbar.className = pal.theme;
 
-  /* Theme switch micro-animation */
   if (animate) {
     toolbar.classList.remove("theme-switch");
     void toolbar.getBoundingClientRect();
     toolbar.classList.add("theme-switch");
   }
 
-  /* Update label */
   nameEl.textContent = pal.name;
 
-  /* Spin the cylinder */
   if (animate && cylinder) {
     cylinder.classList.remove("spin");
-    /* reset animation */
     void cylinder.getBoundingClientRect();
     cylinder.classList.add("spin");
     cylinder.addEventListener("animationend", () => {
@@ -312,13 +413,11 @@ function applyPalette(index, animate = true) {
     }, { once: true });
   }
 
-  /* Re-render with new palette */
   onInteractionStart();
   requestRender();
   onInteractionEnd();
 }
 
-/* Revolver button click handler */
 document.addEventListener("DOMContentLoaded", () => {
   const btn = document.getElementById("paletteBtn");
   if (btn) {
@@ -328,11 +427,30 @@ document.addEventListener("DOMContentLoaded", () => {
       applyPalette(next, true);
     });
   }
-  /* Apply initial theme */
   document.getElementById("toolbar").classList.add("theme-cosmos");
 });
 
-/* Blit shader for FBO upscale */
+function calculateReferenceOrbit(cre, cim, maxIter, escapeRadius2 = 4.0) {
+  let zr = new Decimal(0);
+  let zi = new Decimal(0);
+  const re = [];
+  const im = [];
+  let len = 0;
+  for (let i = 0; i < maxIter; i++) {
+    re.push(zr.toNumber());
+    im.push(zi.toNumber());
+    len++;
+    const zr2 = zr.times(zr);
+    const zi2 = zi.times(zi);
+    if (zr2.plus(zi2).gt(escapeRadius2)) break;
+    const newZi = zr.times(zi).times(2).plus(cim);
+    const newZr = zr2.minus(zi2).plus(cre);
+    zr = newZr;
+    zi = newZi;
+  }
+  return { re, im, len };
+}
+
 const BLIT_VERT = `#version 300 es
 precision highp float;
 out vec2 vUV;
@@ -356,17 +474,24 @@ const u_blitTex = gl.getUniformLocation(blitProg, "u_tex");
 const vao = gl.createVertexArray();
 gl.bindVertexArray(vao);
 
-/* ----------------------------------------------------------
-   5.  DOUBLE-FLOAT SPLIT
-   ---------------------------------------------------------- */
+const orbitTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, orbitTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
 function splitDouble(v) {
   const hi = Math.fround(v);
   return [hi, v - hi];
 }
 
-/* ----------------------------------------------------------
-   6.  LOW-RES FBO + RENDER
-   ---------------------------------------------------------- */
+function splitDecimal(d) {
+  const hi = Number(d.toSignificantDigits(17));
+  const lo = Number(d.minus(hi));
+  return [hi, lo];
+}
+
 let lowResFBO = null, lowResTex = null, lowResW = 0, lowResH = 0;
 
 function ensureLowResFBO(w, h) {
@@ -387,10 +512,11 @@ function ensureLowResFBO(w, h) {
 }
 
 function setMandelbrotUniforms(w, h, maxIter) {
-  const c = floatCenter();
+  const cRe = new Decimal(state.centerRe);
+  const cIm = new Decimal(state.centerIm);
   const s = floatScale();
-  const [reHi, reLo] = splitDouble(c.re);
-  const [imHi, imLo] = splitDouble(c.im);
+  const [reHi, reLo] = splitDecimal(cRe);
+  const [imHi, imLo] = splitDecimal(cIm);
   gl.useProgram(prog);
   gl.bindVertexArray(vao);
   gl.uniform2f(u_resolution, w, h);
@@ -403,7 +529,66 @@ function setMandelbrotUniforms(w, h, maxIter) {
   gl.uniform1i(u_paletteMode, currentPalette);
 }
 
-/** Render low-res into FBO, then blit to full-screen canvas */
+let orbitCacheKey = "";
+let orbitCacheLen = 1;
+
+function uploadOrbitTexture(orbit) {
+  const len = Math.max(orbit.len || orbit.re.length, 1);
+  const data = new Float32Array(len * 4);
+  for (let i = 0; i < len; i++) {
+    const re = orbit.re[i] ?? 0;
+    const im = orbit.im[i] ?? 0;
+    const reSplit = re instanceof Decimal ? splitDecimal(re) : splitDouble(re);
+    const imSplit = im instanceof Decimal ? splitDecimal(im) : splitDouble(im);
+    const base = i * 4;
+    data[base] = reSplit[0];
+    data[base + 1] = reSplit[1];
+    data[base + 2] = imSplit[0];
+    data[base + 3] = imSplit[1];
+  }
+  gl.bindTexture(gl.TEXTURE_2D, orbitTex);
+  gl.texImage2D(
+    gl.TEXTURE_2D,
+    0,
+    gl.RGBA32F,
+    len,
+    1,
+    0,
+    gl.RGBA,
+    gl.FLOAT,
+    data
+  );
+  return len;
+}
+
+function setPerturbUniforms(w, h, maxIter) {
+  const sDec = decimalScale();
+  const [sHi, sLo] = splitDecimal(sDec);
+  const key = `${state.centerRe},${state.centerIm},${maxIter}`;
+  if (key !== orbitCacheKey) {
+    const orbit = calculateReferenceOrbit(
+      new Decimal(state.centerRe),
+      new Decimal(state.centerIm),
+      maxIter,
+      4.0
+    );
+    orbitCacheLen = uploadOrbitTexture(orbit);
+    orbitCacheKey = key;
+  }
+
+  gl.useProgram(progPert);
+  gl.bindVertexArray(vao);
+  gl.uniform2f(u_p_resolution, w, h);
+  gl.uniform1f(u_p_scaleHi, sHi);
+  gl.uniform1f(u_p_scaleLo, sLo);
+  gl.uniform1i(u_p_maxIter, maxIter);
+  gl.uniform1i(u_p_paletteMode, currentPalette);
+  gl.uniform1i(u_p_orbitLen, orbitCacheLen);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, orbitTex);
+  gl.uniform1i(u_p_orbitTex, 1);
+}
+
 function renderLowRes() {
   const fullW = canvas.width;
   const fullH = canvas.height;
@@ -412,14 +597,12 @@ function renderLowRes() {
 
   ensureLowResFBO(w, h);
 
-  /* Render Mandelbrot to FBO at low resolution */
   gl.bindFramebuffer(gl.FRAMEBUFFER, lowResFBO);
   gl.viewport(0, 0, w, h);
   gl.disable(gl.SCISSOR_TEST);
-  setMandelbrotUniforms(w, h, iterCount(BASE_ITER_LOW));
+  setPerturbUniforms(w, h, iterCount(BASE_ITER_LOW));
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-  /* Blit FBO → screen (bilinear upscale fills entire canvas) */
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, fullW, fullH);
   gl.useProgram(blitProg);
@@ -429,13 +612,6 @@ function renderLowRes() {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
-/* ----------------------------------------------------------
-   7.  PROGRESSIVE HI-RES (GPU scissor-tiled)
-   Each tile is rendered directly to the default framebuffer
-   at full resolution via gl.scissor. Since preserveDrawingBuffer
-   is true, already-drawn tiles persist.  Between batches we
-   yield to the browser via rAF so tiles appear progressively.
-   ---------------------------------------------------------- */
 function startHiResRender() {
   const myId = ++hiResAbortId;
 
@@ -443,7 +619,6 @@ function startHiResRender() {
   const fullH = canvas.height;
   const maxIter = iterCount(BASE_ITER_HIGH);
 
-  /* Build tile list */
   const tiles = [];
   for (let y = 0; y < fullH; y += HI_RES_TILE_SIZE) {
     for (let x = 0; x < fullW; x += HI_RES_TILE_SIZE) {
@@ -459,22 +634,20 @@ function startHiResRender() {
   let done = 0;
   setProgress(0);
 
-  /* Set Mandelbrot uniforms once (constant across all tiles) */
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, fullW, fullH);
-  setMandelbrotUniforms(fullW, fullH, maxIter);
+  setPerturbUniforms(fullW, fullH, maxIter);
   gl.enable(gl.SCISSOR_TEST);
 
   function renderBatch() {
     if (myId !== hiResAbortId) {
       gl.disable(gl.SCISSOR_TEST);
-      return;                          // aborted
+      return;
     }
 
-    /* Re-bind program/uniforms in case low-res blit changed them */
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, fullW, fullH);
-    gl.useProgram(prog);
+    gl.useProgram(progPert);
     gl.bindVertexArray(vao);
     gl.enable(gl.SCISSOR_TEST);
 
@@ -498,9 +671,6 @@ function startHiResRender() {
   requestAnimationFrame(renderBatch);
 }
 
-/* ----------------------------------------------------------
-   8.  UI UPDATES
-   ---------------------------------------------------------- */
 function setProgress(pct) {
   progressBar.style.width = pct + "%";
   progressTxt.textContent = pct + "%";
@@ -511,8 +681,12 @@ function updateUI() {
   zoomDisp.textContent = formatZoom(z);
   const prec = Math.max(6, Math.min(40,
     Math.ceil(Math.log10(z.toNumber() + 1)) + 4));
-  realDisp.textContent = state.centerRe.toSignificantDigits(prec).toString();
-  imagDisp.textContent = state.centerIm.toSignificantDigits(prec).toString();
+  realDisp.textContent = new Decimal(state.centerRe)
+    .toSignificantDigits(prec)
+    .toString();
+  imagDisp.textContent = new Decimal(state.centerIm)
+    .toSignificantDigits(prec)
+    .toString();
 }
 
 function formatZoom(z) {
@@ -527,13 +701,10 @@ function formatZoom(z) {
   return `× ${signed}`;
 }
 
-/* ----------------------------------------------------------
-   9.  INTERACTION LIFECYCLE
-   ---------------------------------------------------------- */
 function onInteractionStart() {
   state.interacting = true;
   state.hiResDone   = false;
-  hiResAbortId++;                     // abort any running hi-res
+  hiResAbortId++;
   clearTimeout(idleTimer);
   setProgress(0);
 }
@@ -546,7 +717,7 @@ function scheduleIdle() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
     state.interacting = false;
-    startHiResRender();               // begin progressive tiles
+    startHiResRender();
   }, IDLE_DEBOUNCE_MS);
 }
 
@@ -555,17 +726,15 @@ function requestRender() {
   updateUI();
 }
 
-/* ----------------------------------------------------------
-   10. INTERACTION: PAN (pointer)
-   ---------------------------------------------------------- */
 canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   state.dragging = true;
   state.dragX = e.clientX;
   state.dragY = e.clientY;
-  canvas.setPointerCapture(e.pointerId);
+  e.currentTarget.setPointerCapture(e.pointerId);
   onInteractionStart();
 });
+
 
 canvas.addEventListener("pointermove", (e) => {
   if (!state.dragging) return;
@@ -574,22 +743,21 @@ canvas.addEventListener("pointermove", (e) => {
   state.dragX = e.clientX;
   state.dragY = e.clientY;
   const aspect = W / H;
-  /* Use Decimal scale to avoid precision loss at extreme zoom */
   const ds = new Decimal(state.pixelScale).div(state.zoom);
-  state.centerRe = state.centerRe.minus(ds.times(dx / W * aspect));
-  state.centerIm = state.centerIm.minus(ds.times(dy / H));
+  const centerRe = new Decimal(state.centerRe);
+  const centerIm = new Decimal(state.centerIm);
+  state.centerRe = storeCenter(centerRe.minus(ds.times(dx / W * aspect)));
+  state.centerIm = storeCenter(centerIm.minus(ds.times(dy / H)));
   requestRender();
 });
 
+
 canvas.addEventListener("pointerup", (e) => {
   state.dragging = false;
-  canvas.releasePointerCapture(e.pointerId);
+  e.currentTarget.releasePointerCapture(e.pointerId);
   onInteractionEnd();
 });
 
-/* ----------------------------------------------------------
-   11. INTERACTION: ZOOM (wheel)
-   ---------------------------------------------------------- */
 canvas.addEventListener("wheel", (e) => {
   e.preventDefault();
   onInteractionStart();
@@ -598,33 +766,24 @@ canvas.addEventListener("wheel", (e) => {
   const aspect = W / H;
   const ds = decimalScale();
 
-  /* Pixel fractions matching shader mapping:
-     shader px = (vUV.x - 0.5) * aspect   → Re offset
-     shader py = -(vUV.y - 0.5)           → Im offset
-     But drag convention: centerIm -= dy/H * scale
-     So effective screen→world for Im: centerIm - (clientY/H - 0.5) * scale
-     which equals centerIm + (0.5 - clientY/H) * scale                      */
-  const fxScreen = (e.clientX / W - 0.5) * aspect;   // Re fraction
-  const fyScreen = (e.clientY / H - 0.5);            // screen Y fraction
+    const fxScreen = (e.clientX / W - 0.5) * aspect;
+    const fyScreen = (e.clientY / H - 0.5);
 
-  /* World point under cursor */
-  const wRe = state.centerRe.plus(ds.times(fxScreen));
-  const wIm = state.centerIm.plus(ds.times(fyScreen));
+  const centerRe = new Decimal(state.centerRe);
+  const centerIm = new Decimal(state.centerIm);
+  const wRe = centerRe.plus(ds.times(fxScreen));
+  const wIm = centerIm.plus(ds.times(fyScreen));
 
   state.zoom = state.zoom.times(new Decimal(factor));
 
-  /* After zoom, re-centre so the same world point stays under cursor */
   const dsNew = decimalScale();
-  state.centerRe = wRe.minus(dsNew.times(fxScreen));
-  state.centerIm = wIm.minus(dsNew.times(fyScreen));
+  state.centerRe = storeCenter(wRe.minus(dsNew.times(fxScreen)));
+  state.centerIm = storeCenter(wIm.minus(dsNew.times(fyScreen)));
 
   requestRender();
   onInteractionEnd();
 }, { passive: false });
 
-/* ----------------------------------------------------------
-   12. TOUCH GESTURES
-   ---------------------------------------------------------- */
 let touchCache = [];
 let lastPinchDist = null;
 
@@ -640,6 +799,7 @@ canvas.addEventListener("touchstart", (e) => {
   onInteractionStart();
 }, { passive: false });
 
+
 canvas.addEventListener("touchmove", (e) => {
   e.preventDefault();
   for (const t of e.changedTouches) {
@@ -653,8 +813,10 @@ canvas.addEventListener("touchmove", (e) => {
     state.dragY = touchCache[0].y;
     const aspect = W / H;
     const ds = new Decimal(state.pixelScale).div(state.zoom);
-    state.centerRe = state.centerRe.minus(ds.times(dx / W * aspect));
-    state.centerIm = state.centerIm.minus(ds.times(dy / H));
+    const centerRe = new Decimal(state.centerRe);
+    const centerIm = new Decimal(state.centerIm);
+    state.centerRe = storeCenter(centerRe.minus(ds.times(dx / W * aspect)));
+    state.centerIm = storeCenter(centerIm.minus(ds.times(dy / H)));
     requestRender();
   } else if (touchCache.length >= 2) {
     const ddx = touchCache[1].x - touchCache[0].x;
@@ -668,17 +830,20 @@ canvas.addEventListener("touchmove", (e) => {
       const ds = decimalScale();
       const fxS = (cx / W - 0.5) * aspect;
       const fyS = (cy / H - 0.5);
-      const wRe = state.centerRe.plus(ds.times(fxS));
-      const wIm = state.centerIm.plus(ds.times(fyS));
+      const centerRe = new Decimal(state.centerRe);
+      const centerIm = new Decimal(state.centerIm);
+      const wRe = centerRe.plus(ds.times(fxS));
+      const wIm = centerIm.plus(ds.times(fyS));
       state.zoom = state.zoom.times(new Decimal(factor));
       const dsNew = decimalScale();
-      state.centerRe = wRe.minus(dsNew.times(fxS));
-      state.centerIm = wIm.minus(dsNew.times(fyS));
+      state.centerRe = storeCenter(wRe.minus(dsNew.times(fxS)));
+      state.centerIm = storeCenter(wIm.minus(dsNew.times(fyS)));
       requestRender();
     }
     lastPinchDist = dist;
   }
 }, { passive: false });
+
 
 canvas.addEventListener("touchend", (e) => {
   for (const t of e.changedTouches)
@@ -688,23 +853,22 @@ canvas.addEventListener("touchend", (e) => {
   onInteractionEnd();
 }, { passive: false });
 
-/* ----------------------------------------------------------
-   13. KEYBOARD
-   ---------------------------------------------------------- */
 document.addEventListener("keydown", (e) => {
   const PAN = 0.05;
   const ds = decimalScale();
+  const centerRe = new Decimal(state.centerRe);
+  const centerIm = new Decimal(state.centerIm);
   let handled = true;
   switch (e.key) {
-    case "ArrowLeft":  state.centerRe = state.centerRe.minus(ds.times(PAN)); break;
-    case "ArrowRight": state.centerRe = state.centerRe.plus(ds.times(PAN));  break;
-    case "ArrowUp":    state.centerIm = state.centerIm.plus(ds.times(PAN));  break;
-    case "ArrowDown":  state.centerIm = state.centerIm.minus(ds.times(PAN)); break;
+    case "ArrowLeft":  state.centerRe = storeCenter(centerRe.minus(ds.times(PAN))); break;
+    case "ArrowRight": state.centerRe = storeCenter(centerRe.plus(ds.times(PAN)));  break;
+    case "ArrowUp":    state.centerIm = storeCenter(centerIm.plus(ds.times(PAN)));  break;
+    case "ArrowDown":  state.centerIm = storeCenter(centerIm.minus(ds.times(PAN))); break;
     case "+": case "=": state.zoom = state.zoom.times(new Decimal(ZOOM_SPEED)); break;
     case "-":           state.zoom = state.zoom.div(new Decimal(ZOOM_SPEED));  break;
     case "r": case "R":
-      state.centerRe = new Decimal("-0.5");
-      state.centerIm = new Decimal("0.0");
+      state.centerRe = "-0.5";
+      state.centerIm = "0.0";
       state.zoom     = new Decimal("1");
       break;
     default: handled = false;
@@ -712,7 +876,4 @@ document.addEventListener("keydown", (e) => {
   if (handled) { onInteractionStart(); requestRender(); onInteractionEnd(); }
 });
 
-/* ----------------------------------------------------------
-   14. BOOT
-   ---------------------------------------------------------- */
 resize();
