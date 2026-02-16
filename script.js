@@ -146,16 +146,19 @@ vec2 ds_mul(vec2 a, vec2 b) {
 
 vec3 palette(float t) {
   if (u_paletteMode == 0) {
-    /* Cosmos – deep blue/cyan only (no yellow) */
-    vec3 a = vec3(0.10, 0.20, 0.40);
-    vec3 b = vec3(0.18, 0.35, 0.60);
+    /* Cosmos – very dark background with violet highlights */
+    vec3 a = vec3(0.002, 0.001, 0.015);
+    vec3 b = vec3(0.16, 0.02, 0.55);
     vec3 c = vec3(1.0, 1.0, 1.0);
-    vec3 d = vec3(0.00, 0.18, 0.35);
+    vec3 d = vec3(0.05, 0.22, 0.42);
     vec3 col = a + b * cos(6.28318 * (c * t + d));
-    col.r *= 0.55;              /* suppress warm tones */
-    col.g *= 0.35;              /* remove green, push to purple */
-    float glow = pow(max(col.b, 0.0), 2.2) * 0.3;
-    return clamp(col + vec3(glow * 0.4, 0.0, glow), 0.0, 1.0);
+    col.r *= 0.12;
+    col.g *= 0.03;
+    col.g = min(col.g, col.b * 0.06);
+    col = pow(col, vec3(1.35));
+    float glow = pow(max(col.b, 0.0), 3.4) * 0.85;
+    float ridge = pow(clamp(t, 0.0, 1.0), 0.35) * 0.25;
+    return clamp(col + vec3(0.0, 0.0, glow + ridge), 0.0, 1.0);
   } else if (u_paletteMode == 1) {
     /* Noir – B&W with strong 3D emboss/relief effect */
     float base = 0.5 + 0.5 * cos(6.28318 * t * 0.8);
@@ -287,6 +290,13 @@ function applyPalette(index, animate = true) {
 
   /* Update toolbar theme class */
   toolbar.className = pal.theme;
+
+  /* Theme switch micro-animation */
+  if (animate) {
+    toolbar.classList.remove("theme-switch");
+    void toolbar.getBoundingClientRect();
+    toolbar.classList.add("theme-switch");
+  }
 
   /* Update label */
   nameEl.textContent = pal.name;
@@ -498,11 +508,23 @@ function setProgress(pct) {
 
 function updateUI() {
   const z = state.zoom;
-  zoomDisp.textContent = z.toExponential(2);
+  zoomDisp.textContent = formatZoom(z);
   const prec = Math.max(6, Math.min(40,
     Math.ceil(Math.log10(z.toNumber() + 1)) + 4));
   realDisp.textContent = state.centerRe.toSignificantDigits(prec).toString();
   imagDisp.textContent = state.centerIm.toSignificantDigits(prec).toString();
+}
+
+function formatZoom(z) {
+  if (z.isZero()) return "× 0";
+  const raw = z.gte(1) ? z.toFixed(0) : z.toFixed(6).replace(/\.?0+$/, "");
+  const negative = raw.startsWith("-");
+  const digits = negative ? raw.slice(1) : raw;
+  const [intPart, fracPart] = digits.split(".");
+  const groupedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, "\u202F");
+  const grouped = fracPart ? `${groupedInt}.${fracPart}` : groupedInt;
+  const signed = negative ? `-${grouped}` : grouped;
+  return `× ${signed}`;
 }
 
 /* ----------------------------------------------------------
