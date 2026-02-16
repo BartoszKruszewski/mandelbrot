@@ -128,6 +128,7 @@ uniform float u_centerHi_im;
 uniform float u_centerLo_im;
 uniform float u_scale;
 uniform int   u_maxIter;
+uniform int   u_paletteMode;
 
 vec2 ds_add(vec2 a, vec2 b) {
   float t1 = a.x + b.x;
@@ -144,11 +145,48 @@ vec2 ds_mul(vec2 a, vec2 b) {
 }
 
 vec3 palette(float t) {
-  vec3 a = vec3(0.5, 0.5, 0.5);
-  vec3 b = vec3(0.5, 0.5, 0.5);
-  vec3 c = vec3(1.0, 1.0, 1.0);
-  vec3 d = vec3(0.00, 0.10, 0.20);
-  return a + b * cos(6.28318 * (c * t + d));
+  if (u_paletteMode == 0) {
+    /* Cosmos – deep blue/cyan only (no yellow) */
+    vec3 a = vec3(0.10, 0.20, 0.40);
+    vec3 b = vec3(0.18, 0.35, 0.60);
+    vec3 c = vec3(1.0, 1.0, 1.0);
+    vec3 d = vec3(0.00, 0.18, 0.35);
+    vec3 col = a + b * cos(6.28318 * (c * t + d));
+    col.r *= 0.55;              /* suppress warm tones */
+    col.g *= 0.35;              /* remove green, push to purple */
+    float glow = pow(max(col.b, 0.0), 2.2) * 0.3;
+    return clamp(col + vec3(glow * 0.4, 0.0, glow), 0.0, 1.0);
+  } else if (u_paletteMode == 1) {
+    /* Noir – B&W with strong 3D emboss/relief effect */
+    float base = 0.5 + 0.5 * cos(6.28318 * t * 0.8);
+    /* multi-frequency edges for depth */
+    float edge1 = 0.5 + 0.5 * cos(6.28318 * t * 3.0 + 0.8);
+    float edge2 = 0.5 + 0.5 * cos(6.28318 * t * 7.0 + 2.0);
+    float edge3 = 0.5 + 0.5 * sin(6.28318 * t * 5.0);
+    /* specular highlight */
+    float spec = pow(edge1, 5.0) * 0.6;
+    /* ambient occlusion shadow */
+    float ao = (1.0 - edge2) * 0.25;
+    /* rim light */
+    float rim = pow(edge3, 4.0) * 0.3;
+    float lum = clamp(base * 0.7 + spec + rim - ao + 0.1, 0.0, 1.0);
+    /* slight warm/cool tint for depth perception */
+    float warm = spec * 0.08;
+    return clamp(vec3(lum + warm, lum, lum - warm * 0.5), 0.0, 1.0);
+  } else {
+    /* Inferno – inverted Noir (white base) with red accents */
+    float base = 0.5 + 0.5 * cos(6.28318 * t * 0.8);
+    float edge1 = 0.5 + 0.5 * cos(6.28318 * t * 3.0 + 0.8);
+    float edge2 = 0.5 + 0.5 * cos(6.28318 * t * 7.0 + 2.0);
+    float edge3 = 0.5 + 0.5 * sin(6.28318 * t * 5.0);
+    float spec = pow(edge1, 5.0) * 0.55;
+    float ao = (1.0 - edge2) * 0.22;
+    float rim = pow(edge3, 4.0) * 0.25;
+    float lum = clamp(base * 0.7 + spec + rim - ao + 0.1, 0.0, 1.0);
+    float inv = clamp(1.0 - lum * 0.85, 0.0, 1.0);
+    float red = pow(edge1, 3.0) * 0.35 + pow(edge3, 4.0) * 0.15;
+    return clamp(vec3(inv + red, inv * 0.95, inv * 0.95), 0.0, 1.0);
+  }
 }
 
 void main() {
@@ -162,10 +200,10 @@ void main() {
   float crf = c_re.x, cif = c_im.x;
   float q = (crf - 0.25) * (crf - 0.25) + cif * cif;
   if ((q * (q + (crf - 0.25))) <= (0.25 * cif * cif)) {
-    fragColor = vec4(0,0,0,1); return;
+    fragColor = (u_paletteMode == 2) ? vec4(1,1,1,1) : vec4(0,0,0,1); return;
   }
   if (((crf + 1.0) * (crf + 1.0) + cif * cif) <= 0.0625) {
-    fragColor = vec4(0,0,0,1); return;
+    fragColor = (u_paletteMode == 2) ? vec4(1,1,1,1) : vec4(0,0,0,1); return;
   }
 
   vec2 z_re = vec2(0.0), z_im = vec2(0.0);
@@ -184,7 +222,7 @@ void main() {
   }
 
   if (iter >= u_maxIter) {
-    fragColor = vec4(0,0,0,1);
+    fragColor = (u_paletteMode == 2) ? vec4(1,1,1,1) : vec4(0,0,0,1);
   } else {
     float mag2 = zrsq + zisq;
     float nu   = log(log(max(mag2, 1.0))) / log(2.0);
@@ -228,6 +266,61 @@ const u_centerHi_im = gl.getUniformLocation(prog, "u_centerHi_im");
 const u_centerLo_im = gl.getUniformLocation(prog, "u_centerLo_im");
 const u_scale       = gl.getUniformLocation(prog, "u_scale");
 const u_maxIter     = gl.getUniformLocation(prog, "u_maxIter");
+const u_paletteMode = gl.getUniformLocation(prog, "u_paletteMode");
+
+/* ----------------------------------------------------------
+   PALETTE PROFILES & REVOLVER SWITCHER
+   ---------------------------------------------------------- */
+const PALETTES = [
+  { id: 0, name: "Cosmos",  theme: "theme-cosmos"  },
+  { id: 1, name: "Noir",    theme: "theme-noir"    },
+  { id: 2, name: "Inferno", theme: "theme-inferno" },
+];
+let currentPalette = 0;
+
+function applyPalette(index, animate = true) {
+  currentPalette = index;
+  const pal = PALETTES[index];
+  const toolbar = document.getElementById("toolbar");
+  const nameEl  = document.getElementById("paletteName");
+  const cylinder = document.querySelector(".revolver-cylinder");
+
+  /* Update toolbar theme class */
+  toolbar.className = pal.theme;
+
+  /* Update label */
+  nameEl.textContent = pal.name;
+
+  /* Spin the cylinder */
+  if (animate && cylinder) {
+    cylinder.classList.remove("spin");
+    /* reset animation */
+    void cylinder.getBoundingClientRect();
+    cylinder.classList.add("spin");
+    cylinder.addEventListener("animationend", () => {
+      cylinder.classList.remove("spin");
+    }, { once: true });
+  }
+
+  /* Re-render with new palette */
+  onInteractionStart();
+  requestRender();
+  onInteractionEnd();
+}
+
+/* Revolver button click handler */
+document.addEventListener("DOMContentLoaded", () => {
+  const btn = document.getElementById("paletteBtn");
+  if (btn) {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const next = (currentPalette + 1) % PALETTES.length;
+      applyPalette(next, true);
+    });
+  }
+  /* Apply initial theme */
+  document.getElementById("toolbar").classList.add("theme-cosmos");
+});
 
 /* Blit shader for FBO upscale */
 const BLIT_VERT = `#version 300 es
@@ -297,6 +390,7 @@ function setMandelbrotUniforms(w, h, maxIter) {
   gl.uniform1f(u_centerLo_im, imLo);
   gl.uniform1f(u_scale, s);
   gl.uniform1i(u_maxIter, maxIter);
+  gl.uniform1i(u_paletteMode, currentPalette);
 }
 
 /** Render low-res into FBO, then blit to full-screen canvas */

@@ -48,14 +48,14 @@ body:active {
   border-radius: 999px;
 
   /* Glassmorphism */
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(24px) saturate(1.6);
-  -webkit-backdrop-filter: blur(24px) saturate(1.6);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(28px) saturate(1.8);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.35),
-    0 1px 0 rgba(255, 255, 255, 0.06) inset,
-    0 -1px 0 rgba(0, 0, 0, 0.15) inset;
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 1px 0 rgba(255, 255, 255, 0.1) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.2) inset;
 
   /* Subtle animation on appear */
   animation: toolbar-enter 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -82,30 +82,32 @@ body:active {
 }
 
 .toolbar-label {
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(255, 255, 255, 0.7);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
 }
 
 .toolbar-value {
   font-size: 13px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.92);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 1);
   font-variant-numeric: tabular-nums;
   font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
   min-width: 90px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.6);
 }
 
 /* Divider */
 .toolbar-divider {
   width: 1px;
-  height: 24px;
+  height: 28px;
   background: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.3) 50%,
     rgba(255, 255, 255, 0) 100%
   );
   flex-shrink: 0;
@@ -118,11 +120,12 @@ body:active {
 
 .progress-bar-container {
   width: 80px;
-  height: 4px;
+  height: 5px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.15);
   overflow: hidden;
   position: relative;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3) inset;
 }
 
 .progress-bar-fill {
@@ -168,4 +171,172 @@ body:active {
   .progress-bar-container {
     width: 50px;
   }
+  .palette-label {
+    display: none;
+  }
 }
+
+/* =========================================================
+   REVOLVER PALETTE BUTTON
+   ========================================================= */
+.palette-section {
+  padding: 2px 4px 2px 8px !important;
+}
+
+.revolver-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 50%;
+  outline: none;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.revolver-btn:hover .revolver-cylinder {
+  filter: drop-shadow(0 0 6px rgba(255,255,255,0.3));
+}
+
+.revolver-btn:active .revolver-cylinder {
+  transform: scale(0.88);
+}
+
+.revolver-cylinder {
+  transition: transform 0.05s ease;
+  overflow: visible;
+  transform-origin: 50% 50%;
+  display: block;
+}
+
+/* Chamber default */
+.chamber {
+  fill: rgba(255,255,255,0.06);
+  stroke: rgba(255,255,255,0.18);
+  stroke-width: 0.8;
+  transition: fill 0.4s ease, stroke 0.4s ease;
+}
+
+/* Fixed revolver dots (do not rotate) */
+.revolver-dots {
+  position: absolute;
+  width: 38px;
+  height: 38px;
+  left: 2px;
+  top: 1px;
+  pointer-events: none;
+}
+.revolver-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(255,255,255,0.4);
+  transition: background 0.5s ease, box-shadow 0.5s ease;
+}
+.revolver-dot.d1 { left: 16px; top: 2px; }
+.revolver-dot.d2 { left: 29px; top: 24px; }
+.revolver-dot.d3 { left: 3px;  top: 24px; }
+
+.palette-label {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255,255,255,0.55);
+  white-space: nowrap;
+  transition: color 0.5s ease;
+}
+
+/* ---- Cylinder rotation animation ---- */
+.revolver-cylinder.spin {
+  animation: cylinder-spin 0.55s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+@keyframes cylinder-spin {
+  0%   { transform: rotate(0deg)   scale(1);    filter: brightness(1);   }
+  20%  { transform: rotate(50deg)  scale(1.22); filter: brightness(1.3); }
+  50%  { transform: rotate(110deg) scale(1.12); filter: brightness(1.1); }
+  80%  { transform: rotate(118deg) scale(0.95); filter: brightness(1.0); }
+  100% { transform: rotate(120deg) scale(1);    filter: brightness(1);   }
+}
+
+/* =========================================================
+   TOOLBAR COLOR THEME TRANSITIONS
+   ========================================================= */
+#toolbar {
+  transition:
+    background 0.7s ease,
+    border-color 0.7s ease,
+    box-shadow 0.7s ease;
+}
+
+.toolbar-label,
+.toolbar-value {
+  transition: color 0.7s ease;
+}
+
+.toolbar-divider {
+  transition: background 0.7s ease;
+}
+
+.progress-bar-fill {
+  transition: width 0.15s ease-out, background 0.7s ease;
+}
+
+/* ---------- Theme: Cosmos (default) ---------- */
+#toolbar.theme-cosmos {
+  background: rgba(10, 12, 24, 0.82);
+  border-color: rgba(120, 170, 255, 0.28);
+  box-shadow:
+    0 10px 36px rgba(0, 0, 0, 0.6),
+    0 0 30px rgba(80, 130, 255, 0.08),
+    0 1px 0 rgba(120, 170, 255, 0.12) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.2) inset;
+}
+#toolbar.theme-cosmos .toolbar-label { color: rgba(150, 200, 255, 0.8); }
+#toolbar.theme-cosmos .toolbar-value { color: rgba(230, 245, 255, 1); }
+#toolbar.theme-cosmos .revolver-dot.d1 { background: #4aa6ff; box-shadow: 0 0 7px rgba(74,166,255,0.7); }
+#toolbar.theme-cosmos .revolver-dot.d2 { background: #6dd5fa; box-shadow: 0 0 7px rgba(109,213,250,0.7); }
+#toolbar.theme-cosmos .revolver-dot.d3 { background: #7aa0ff; box-shadow: 0 0 7px rgba(122,160,255,0.7); }
+
+/* ---------- Theme: Noir (B&W 3D) ---------- */
+#toolbar.theme-noir {
+  background: rgba(10, 10, 10, 0.88);
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.7),
+    0 2px 0 rgba(255, 255, 255, 0.2) inset,
+    0 -2px 0 rgba(0, 0, 0, 0.4) inset,
+    0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+#toolbar.theme-noir .toolbar-label { color: rgba(230,230,230,0.8); text-shadow: 0 1px 2px rgba(0,0,0,0.9); }
+#toolbar.theme-noir .toolbar-value { color: rgba(255,255,255,1); text-shadow: 0 2px 4px rgba(0,0,0,0.9); }
+#toolbar.theme-noir .revolver-dot.d1 { background: #f2f2f2; box-shadow: 0 0 6px rgba(255,255,255,0.7); }
+#toolbar.theme-noir .revolver-dot.d2 { background: #cfcfcf; box-shadow: 0 0 6px rgba(255,255,255,0.4); }
+#toolbar.theme-noir .revolver-dot.d3 { background: #9a9a9a; box-shadow: 0 0 6px rgba(255,255,255,0.3); }
+#toolbar.theme-noir .progress-bar-fill {
+  background: linear-gradient(90deg, #666, #fff, #666);
+  box-shadow: 0 0 6px rgba(255,255,255,0.3);
+}
+
+/* ---------- Theme: Inferno (Red-Blue-Yellow) ---------- */
+#toolbar.theme-inferno {
+  background: rgba(18, 6, 6, 0.86);
+  border-color: rgba(255, 80, 60, 0.35);
+  box-shadow:
+    0 10px 38px rgba(0, 0, 0, 0.55),
+    0 0 26px rgba(255, 70, 50, 0.1),
+    0 2px 0 rgba(255, 180, 120, 0.12) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.3) inset;
+}
+#toolbar.theme-inferno .toolbar-label { color: rgba(255,190,140,0.85); text-shadow: 0 1px 3px rgba(120,20,0,0.9); }
+#toolbar.theme-inferno .toolbar-value { color: rgba(255,235,210,1); text-shadow: 0 0 8px rgba(255,120,80,0.35); }
+#toolbar.theme-inferno .progress-bar-fill {
+  background: linear-gradient(90deg, #ff3b2f, #ff9a8a, #ff3b2f);
+  box-shadow: 0 0 8px rgba(255,80,60,0.5);
+}
+/* Chamber colors are neutral; fixed dots show theme colors */

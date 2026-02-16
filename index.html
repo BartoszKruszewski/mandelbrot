@@ -34,6 +34,29 @@
       </div>
       <span id="progressText" class="toolbar-value progress-value">0%</span>
     </div>
+    <div class="toolbar-divider"></div>
+    <div class="toolbar-section palette-section">
+      <button id="paletteBtn" class="revolver-btn" title="Switch color profile">
+        <svg class="revolver-cylinder" viewBox="0 0 48 48" width="38" height="38">
+          <!-- outer ring with bevel -->
+          <circle cx="24" cy="24" r="22" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2"/>
+          <circle cx="24" cy="24" r="20.5" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="0.5"/>
+          <!-- 3 chambers (120° apart) -->
+          <circle class="chamber" cx="24" cy="8"  r="6"/>
+          <circle class="chamber" cx="37.9" cy="32" r="6"/>
+          <circle class="chamber" cx="10.1" cy="32" r="6"/>
+          <!-- center hub -->
+          <circle cx="24" cy="24" r="4.5" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.35)" stroke-width="1.2"/>
+          <circle cx="24" cy="24" r="1.8" fill="rgba(255,255,255,0.25)"/>
+        </svg>
+        <span class="revolver-dots" aria-hidden="true">
+          <span class="revolver-dot d1"></span>
+          <span class="revolver-dot d2"></span>
+          <span class="revolver-dot d3"></span>
+        </span>
+        <span class="palette-label" id="paletteName">Cosmos</span>
+      </button>
+    </div>
   </div>
 
   <script src="script.js"></script>
