@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mandelbrot Explorer</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/decimal.js@10.4.3/decimal.min.js"></script>
+</head>
+<body>
+  <canvas id="fractalCanvas"></canvas>
+
+  <!-- Liquid Glass Toolbar -->
+  <div id="toolbar">
+    <div class="toolbar-section">
+      <span class="toolbar-label">Zoom</span>
+      <span id="zoomDisplay" class="toolbar-value">1.0e+0</span>
+    </div>
+    <div class="toolbar-divider"></div>
+    <div class="toolbar-section">
+      <span class="toolbar-label">Re</span>
+      <span id="realDisplay" class="toolbar-value">-0.5</span>
+    </div>
+    <div class="toolbar-divider"></div>
+    <div class="toolbar-section">
+      <span class="toolbar-label">Im</span>
+      <span id="imagDisplay" class="toolbar-value">0.0</span>
+    </div>
+    <div class="toolbar-divider"></div>
+    <div class="toolbar-section progress-section">
+      <span class="toolbar-label">HiRes</span>
+      <div class="progress-bar-container">
+        <div id="progressBar" class="progress-bar-fill"></div>
+      </div>
+      <span id="progressText" class="toolbar-value progress-value">0%</span>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
