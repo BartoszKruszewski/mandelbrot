@@ -2,6 +2,8 @@
 
 An interactive Mandelbrot set viewer built with vanilla HTML, CSS, and JavaScript. It renders the fractal on a canvas and lets you smoothly pan and zoom to explore intricate details.
 
+Avalible at https://bartoszkruszewski.github.io/mandelbrot/
+
 ## Features
 
 - Smooth zooming and panning
