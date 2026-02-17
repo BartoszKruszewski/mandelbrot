@@ -177,10 +177,10 @@ void main() {
   float crf = c_re.x, cif = c_im.x;
   float q = (crf - 0.25) * (crf - 0.25) + cif * cif;
   if ((q * (q + (crf - 0.25))) <= (0.25 * cif * cif)) {
-    fragColor = (u_paletteMode == 2) ? vec4(1,1,1,1) : vec4(0,0,0,1); return;
+    fragColor = (u_paletteMode == 2) ? vec4(1,1,1,1) : (u_paletteMode == 3) ? vec4(1.0, 0.55, 0.78, 1.0) : vec4(0,0,0,1); return;
   }
   if (((crf + 1.0) * (crf + 1.0) + cif * cif) <= 0.0625) {
-    fragColor = (u_paletteMode == 2) ? vec4(1,1,1,1) : vec4(0,0,0,1); return;
+    fragColor = (u_paletteMode == 2) ? vec4(1,1,1,1) : (u_paletteMode == 3) ? vec4(1.0, 0.55, 0.78, 1.0) : vec4(0,0,0,1); return;
   }
 
   vec2 z_re = vec2(0.0), z_im = vec2(0.0);
@@ -199,7 +199,7 @@ void main() {
   }
 
   if (iter >= u_maxIter) {
-    fragColor = (u_paletteMode == 2) ? vec4(1,1,1,1) : vec4(0,0,0,1);
+    fragColor = (u_paletteMode == 2) ? vec4(1,1,1,1) : (u_paletteMode == 3) ? vec4(1.0, 0.55, 0.78, 1.0) : vec4(0,0,0,1);
   } else {
     float mag2 = zrsq + zisq;
     float nu   = log(log(max(mag2, 1.0))) / log(2.0);
@@ -323,7 +323,7 @@ void main() {
   }
 
   if (iter >= u_maxIter) {
-    fragColor = (u_paletteMode == 2) ? vec4(1,1,1,1) : vec4(0,0,0,1);
+    fragColor = (u_paletteMode == 2) ? vec4(1,1,1,1) : (u_paletteMode == 3) ? vec4(1.0, 0.55, 0.78, 1.0) : vec4(0,0,0,1);
   } else {
     float mag2 = zrsq + zisq;
     float nu   = log(log(max(mag2, 1.0))) / log(2.0);
@@ -384,6 +384,7 @@ const PALETTES = [
   { id: 0, name: "Cosmos",  theme: "theme-cosmos"  },
   { id: 1, name: "Noir",    theme: "theme-noir"    },
   { id: 2, name: "Inferno", theme: "theme-inferno" },
+  { id: 3, name: "Sakura",  theme: "theme-sakura"  },
 ];
 let currentPalette = 0;
 

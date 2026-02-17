@@ -388,3 +388,43 @@ body:active {
   background: linear-gradient(90deg, #ff3b2f, #ff9a8a, #ff3b2f);
   box-shadow: 0 0 8px rgba(255,80,60,0.5);
 }
+
+#toolbar.theme-sakura {
+  background: rgba(40, 24, 32, 0.86);
+  border-color: rgba(255, 105, 180, 0.45);
+  box-shadow:
+    0 10px 38px rgba(0, 0, 0, 0.5),
+    0 0 26px rgba(255, 85, 160, 0.18),
+    0 2px 0 rgba(255, 140, 200, 0.2) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.3) inset;
+}
+
+#toolbar.theme-sakura .toolbar-label {
+  color: rgba(255, 160, 210, 0.95);
+  text-shadow: 0 1px 3px rgba(100, 20, 60, 0.8);
+}
+
+#toolbar.theme-sakura .toolbar-value {
+  color: rgba(255, 200, 235, 1);
+  text-shadow: 0 0 8px rgba(255, 85, 160, 0.45);
+}
+
+#toolbar.theme-sakura .revolver-dot.d1 {
+  background: #ff4da6;
+  box-shadow: 0 0 8px rgba(255, 77, 166, 0.9);
+}
+
+#toolbar.theme-sakura .revolver-dot.d2 {
+  background: #ff77c3;
+  box-shadow: 0 0 8px rgba(255, 119, 195, 0.88);
+}
+
+#toolbar.theme-sakura .revolver-dot.d3 {
+  background: #ffa3d8;
+  box-shadow: 0 0 8px rgba(255, 163, 216, 0.85);
+}
+
+#toolbar.theme-sakura .progress-bar-fill {
+  background: linear-gradient(90deg, #ff4da6, #ff77c3, #ff4da6);
+  box-shadow: 0 0 10px rgba(255, 77, 166, 0.65);
+}
